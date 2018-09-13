@@ -1,3 +1,4 @@
+import javafx.util.Pair;
 import model.AccessionData;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
@@ -15,7 +16,13 @@ import java.io.StringReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class DataFetcher {
 
@@ -37,89 +44,96 @@ public class DataFetcher {
     private final static String ACCESSION_METADATA_URL = "http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=%s" +
             "&targ=self&form=xml&view=quick";
 
+    private int threadCount;
     private final List<String> samplesIds;
-    private final List<String> accessions;
-    private final List<AccessionData> accessionsData;
+    private final LinkedBlockingQueue<String> accessions;
+    private final LinkedBlockingQueue<AccessionData> accessionsData;
 
-    public DataFetcher() {
+    public DataFetcher(int threadCount) {
         samplesIds = new ArrayList<>();
-        accessions = new ArrayList<>();
-        accessionsData = new ArrayList<>();
+        accessions = new LinkedBlockingQueue<>();
+        accessionsData = new LinkedBlockingQueue<>();
+        this.threadCount = threadCount;
     }
 
     public List<AccessionData> fetchData() {
         getSamples();
-        getGSMs();
-        getMetadata();
-        return accessionsData;
 
-    }
-
-    private void getMetadata() {
+        // set up execution service for getting GSMxxx-s
+        ExecutorService executorGSMs = Executors.newFixedThreadPool(threadCount);
+        Set<Callable<Void>> callables= createCallablesForFetchingGSMs();
         try {
-            for (String accession : accessions) {
-                StringBuffer response = getResponse(String.format(ACCESSION_METADATA_URL, accession));
-                Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
-                        .parse(new InputSource(new StringReader(response.toString())));
-                String organism = doc.getElementsByTagName(ORGANISM_TAG).item(0).getTextContent();
-
-                String assemblySearchPattern = "assembly: ";
-                String assemblyValue = ABSENT_VALUE;
-                int index = response.indexOf(assemblySearchPattern);
-                if (index != -1) {
-                    int counter = 0;
-                    while (Character.isDigit(response.charAt(index + assemblySearchPattern.length() + counter))
-                            || Character.isLetter(response.charAt(index + assemblySearchPattern.length() + counter)))
-                        ++counter;
-                    assemblyValue = response.substring(index + assemblySearchPattern.length(),
-                            index + assemblySearchPattern.length() + counter);
-                }
-
-                String donorSex = ABSENT_VALUE;
-                String donorAge = ABSENT_VALUE;
-                NodeList characteristics = doc.getElementsByTagName(CHARACTERISTICS_TAG);
-                for (int i = 0; i < characteristics.getLength(); ++i) {
-                    Node node = characteristics.item(i);
-                    switch (node.getAttributes().item(0).getTextContent().trim().toLowerCase()) {
-                        case "sex":
-                            donorSex = node.getTextContent().trim();
-                            break;
-                        case "age":
-                            donorAge = node.getTextContent().trim();
-                            break;
-                        default:
-                            break;
-                    }
-                }
-
-                String downloadURL = ABSENT_VALUE;
-                NodeList supplementaryData = doc.getElementsByTagName(SUPPLEMENTARY_DATA_TAG);
-                for (int i = 0; i < supplementaryData.getLength(); ++i) {
-                    Node node = supplementaryData.item(i);
-                    if (node.getAttributes().item(0).getTextContent().trim().equalsIgnoreCase("bed")) {
-                        downloadURL = node.getTextContent().trim();
-                    }
-                }
-
-                accessionsData.add(new AccessionData(accession, organism, assemblyValue, donorSex, donorAge, downloadURL));
-            }
-        } catch (Exception e) {
-            logger.error("Problem with fetching metadata", e);
-            throw new RuntimeException(e);
+            executorGSMs.invokeAll(callables);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
+        executorGSMs.shutdownNow();
+
+        // set up execution service for metadata
+        ExecutorService executorMetadata = Executors.newFixedThreadPool(threadCount);
+        callables= createCallablesForFetchingMetadata();
+        try {
+            executorMetadata.invokeAll(callables);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        executorMetadata.shutdownNow();
+
+        return new ArrayList<>(accessionsData);
+
     }
 
-    private void getGSMs() {
+    private Set<Callable<Void>> createCallablesForFetchingMetadata() {
+        //create callables
+        Set<Callable<Void>> callables = new HashSet<>();
+        for (String accession : accessions) {
+            callables.add(() -> {
+                getMetadata(accession);
+                return null;
+            });
+        }
+        return callables;
+    }
+
+    private Set<Callable<Void>> createCallablesForFetchingGSMs() {
+        List<Pair<Integer, Integer>> indexes = new ArrayList<>();
+        StringBuilder ids = new StringBuilder();
+        int lastIndex = 0;
+        for (int i = 0; i < samplesIds.size(); ++i) {
+            if (ids.length() + ACCESIONS_URL.length() + samplesIds.get(i).length() > MAX_URL_SIZE) {
+                indexes.add(new Pair<>(lastIndex, i - 1));
+                lastIndex = i;
+                ids = new StringBuilder(samplesIds.get(i) + ",");
+                continue;
+            }
+            ids.append(samplesIds.get(i)).append(",");
+        }
+        indexes.add(new Pair<>(lastIndex, samplesIds.size() - 1));
+
+        //create callables
+        Set<Callable<Void>> callables = new HashSet<Callable<Void>>();
+        for (Pair<Integer, Integer> index : indexes) {
+            int startIndex = index.getKey();
+            int endIndex = index.getValue();
+            callables.add(() -> {
+                getGSMs(startIndex, endIndex);
+                return null;
+            });
+        }
+        return callables;
+    }
+
+
+    private void getGSMs(int firstIndex, int lastIndex) {
+//        System.out.println(firstIndex + " " + lastIndex);
         StringBuilder ids = new StringBuilder();
         StringBuilder response = new StringBuilder();
         try {
-            for (String samplesId : samplesIds) {
-                if (ids.length() + ACCESIONS_URL.length() + samplesId.length() > MAX_URL_SIZE) {
-                    response.append(getResponse(ACCESIONS_URL + ids));
-                    ids = new StringBuilder(samplesId + ",");
-                    continue;
+            for (int i = firstIndex; i <= lastIndex; ++i) {
+                ids.append(samplesIds.get(i));
+                if (i != lastIndex) {
+                    ids.append(",");
                 }
-                ids.append(samplesId).append(",");
             }
             response.append(getResponse(ACCESIONS_URL + ids));
         } catch (IOException e) {
@@ -137,6 +151,60 @@ public class DataFetcher {
             accessions.add(response.substring(index + SEARCH_PATTERN.length(),
                     index + SEARCH_PATTERN.length() + counter));
             index = response.indexOf(SEARCH_PATTERN, index + 1);
+        }
+    }
+
+
+    private void getMetadata(String accession) {
+        try {
+            StringBuffer response = getResponse(String.format(ACCESSION_METADATA_URL, accession));
+            Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                    .parse(new InputSource(new StringReader(response.toString())));
+            String organism = doc.getElementsByTagName(ORGANISM_TAG).item(0).getTextContent();
+
+            String assemblySearchPattern = "assembly: ";
+            String assemblyValue = ABSENT_VALUE;
+            int index = response.indexOf(assemblySearchPattern);
+            if (index != -1) {
+                int counter = 0;
+                while (Character.isDigit(response.charAt(index + assemblySearchPattern.length() + counter))
+                        || Character.isLetter(response.charAt(index + assemblySearchPattern.length() + counter)))
+                    ++counter;
+                assemblyValue = response.substring(index + assemblySearchPattern.length(),
+                        index + assemblySearchPattern.length() + counter);
+            }
+
+            String donorSex = ABSENT_VALUE;
+            String donorAge = ABSENT_VALUE;
+            NodeList characteristics = doc.getElementsByTagName(CHARACTERISTICS_TAG);
+            for (int i = 0; i < characteristics.getLength(); ++i) {
+                Node node = characteristics.item(i);
+                switch (node.getAttributes().item(0).getTextContent().trim().toLowerCase()) {
+                    case "sex":
+                        donorSex = node.getTextContent().trim();
+                        break;
+                    case "age":
+                        donorAge = node.getTextContent().trim();
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            String downloadURL = ABSENT_VALUE;
+            NodeList supplementaryData = doc.getElementsByTagName(SUPPLEMENTARY_DATA_TAG);
+            for (int i = 0; i < supplementaryData.getLength(); ++i) {
+                Node node = supplementaryData.item(i);
+                if (node.getAttributes().item(0).getTextContent().trim().equalsIgnoreCase("bed")) {
+                    downloadURL = node.getTextContent().trim();
+                }
+            }
+
+            accessionsData.add(new AccessionData(accession, organism, assemblyValue, donorSex, donorAge, downloadURL));
+
+        } catch (Exception e) {
+            logger.error("Problem with fetching metadata", e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -162,7 +230,7 @@ public class DataFetcher {
 
     private StringBuffer getResponse(String url) throws IOException {
         BufferedReader in = null;
-        StringBuffer response = null;
+        StringBuffer response;
         try {
             URL obj = new URL(url);
             HttpURLConnection con = (HttpURLConnection) obj.openConnection();

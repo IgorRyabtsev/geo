@@ -11,8 +11,10 @@ public class Main {
 
     private static final String HELP_INFORMATION = "This tool  fetches and stores GEO metadata from DB to specified file";
     private static String fileName = "result.csv";
+    private static int threadCount = 1;
 
     private Option fileNameOption;
+    private Option threadCountOption;
     private Option helpOption;
     private Options options = new Options();
 
@@ -35,13 +37,16 @@ public class Main {
             if (cmd.hasOption(fileNameOption.getOpt())) {
                 fileName = cmd.getOptionValue(fileNameOption.getOpt());
             }
+            if (cmd.hasOption(threadCountOption.getOpt())) {
+                threadCount = Integer.valueOf(cmd.getOptionValue(threadCountOption.getOpt()));
+            }
         } catch (ParseException e) {
             printHelp(e.getMessage());
             logger.info("Not correct initial arguments");
             return;
         }
 
-        DataFetcher dataFetcher = new DataFetcher();
+        DataFetcher dataFetcher = new DataFetcher(threadCount);
         List<AccessionData> accessionData = dataFetcher.fetchData();
         CSVDataWriter.writeToCSVFile(fileName, accessionData);
     }
@@ -60,12 +65,20 @@ public class Main {
                 .hasArg()
                 .desc("CSV file name")
                 .build();
+        threadCountOption = Option
+                .builder("t")
+                .longOpt("thread")
+                .argName("thread count")
+                .hasArg()
+                .desc("Set up thread size, default - 1")
+                .build();
         helpOption = Option
                 .builder("h")
                 .longOpt("help")
                 .desc("Display usage")
                 .build();
         options.addOption(fileNameOption);
+        options.addOption(threadCountOption);
         options.addOption(helpOption);
     }
 }
