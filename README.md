@@ -24,13 +24,15 @@ Output:
   usage: geo-data [options] [filename]   
    -f,--file <file name>   CSV file name  
    -h,--help               Display usage  
+   -t,--thread <thread count>   Set up thread size, default - 1
+  
 
 Default filename is `results.csv`
 
 #### Example usage
 
-The example how to start app and save metadata to res.csv file:  
+The example how to start app and save metadata to res.csv file using 5 threads:  
 * It's necessary to compile project:  
     `mvn clean install -Dlog4j.configuration=${PATH_TO_PROJECT}/src/main/resources/log4j.properties`  
 * Execute jar file:  
-    `java -jar geo-data.jar -f res.csv`
+    `java -jar geo-data.jar -t 5 -f res.csv`
