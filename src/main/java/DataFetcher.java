@@ -125,7 +125,6 @@ public class DataFetcher {
 
 
     private void getGSMs(int firstIndex, int lastIndex) {
-//        System.out.println(firstIndex + " " + lastIndex);
         StringBuilder ids = new StringBuilder();
         StringBuilder response = new StringBuilder();
         try {
