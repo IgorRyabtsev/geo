@@ -1,4 +1,6 @@
 import model.AccessionData;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -16,6 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DataFetcher {
+
+    private static final Logger logger = LogManager.getLogger(DataFetcher.class);
 
     private final static int MAX_URL_SIZE = 2083;
     private final static String SEARCH_PATTERN = "Accession: ";
@@ -76,8 +80,8 @@ public class DataFetcher {
                 NodeList characteristics = doc.getElementsByTagName(CHARACTERISTICS_TAG);
                 for (int i = 0; i < characteristics.getLength(); ++i) {
                     Node node = characteristics.item(i);
-                    switch (node.getAttributes().item(0).getTextContent().trim()) {
-                        case "Sex":
+                    switch (node.getAttributes().item(0).getTextContent().trim().toLowerCase()) {
+                        case "sex":
                             donorSex = node.getTextContent().trim();
                             break;
                         case "age":
@@ -100,7 +104,8 @@ public class DataFetcher {
                 accessionsData.add(new AccessionData(accession, organism, assemblyValue, donorSex, donorAge, downloadURL));
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Problem with fetching metadata", e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -118,7 +123,8 @@ public class DataFetcher {
             }
             response.append(getResponse(ACCESIONS_URL + ids));
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Problem with fetching GSMxxx", e);
+            throw new RuntimeException(e);
         }
 
         // extract GSMxxx-s from response
@@ -149,7 +155,8 @@ public class DataFetcher {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Problem with fetching samples", e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -173,7 +180,8 @@ public class DataFetcher {
                 response.append(inputLine).append(LINE_FEED);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("Problem with response or connection to" + url, e);
+            throw new RuntimeException(e);
         } finally {
             if (in != null) {
                 in.close();

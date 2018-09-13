@@ -1,9 +1,13 @@
 import model.AccessionData;
 import org.apache.commons.cli.*;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
 
 import java.util.List;
 
 public class Main {
+
+    private static final Logger logger = LogManager.getLogger(Main.class);
 
     private static final String HELP_INFORMATION = "This tool  fetches and stores GEO metadata from DB to specified file";
     private static String fileName = "result.csv";
@@ -33,6 +37,7 @@ public class Main {
             }
         } catch (ParseException e) {
             printHelp(e.getMessage());
+            logger.info("Not correct initial arguments");
             return;
         }
 

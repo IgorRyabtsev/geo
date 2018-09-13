@@ -1,5 +1,7 @@
 import com.opencsv.CSVWriter;
 import model.AccessionData;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -7,6 +9,9 @@ import java.io.IOException;
 import java.util.List;
 
 public class CSVDataWriter {
+
+    private static final Logger logger = LogManager.getLogger(CSVDataWriter.class);
+
     private final static String[] HEADERS = {"Accession", "Organism", "Genome assembly",
             "Donor sex", "Donor age", "File download url"};
 
@@ -21,7 +26,8 @@ public class CSVDataWriter {
             }
 
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error("There is problem with writing data to file", e);
+            throw new RuntimeException(e);
         }
     }
 
