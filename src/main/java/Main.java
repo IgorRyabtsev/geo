@@ -12,9 +12,11 @@ public class Main {
     private static final String HELP_INFORMATION = "This tool  fetches and stores GEO metadata from DB to specified file";
     private static String fileName = "result.csv";
     private static int threadCount = 1;
+    private static boolean isSaveInputOrder = false;
 
     private Option fileNameOption;
     private Option threadCountOption;
+    private Option saveInputOrder;
     private Option helpOption;
     private Options options = new Options();
 
@@ -37,6 +39,9 @@ public class Main {
             if (cmd.hasOption(fileNameOption.getOpt())) {
                 fileName = cmd.getOptionValue(fileNameOption.getOpt());
             }
+            if (cmd.hasOption(saveInputOrder.getOpt())) {
+                isSaveInputOrder = true;
+            }
             if (cmd.hasOption(threadCountOption.getOpt())) {
                 threadCount = Integer.valueOf(cmd.getOptionValue(threadCountOption.getOpt()));
             }
@@ -46,7 +51,7 @@ public class Main {
             return;
         }
 
-        DataFetcher dataFetcher = new DataFetcher(threadCount);
+        DataFetcher dataFetcher = new DataFetcher(threadCount, isSaveInputOrder);
         List<AccessionData> accessionData = dataFetcher.fetchData();
         CSVDataWriter.writeToCSVFile(fileName, accessionData);
     }
@@ -63,22 +68,28 @@ public class Main {
                 .longOpt("file")
                 .argName("file name")
                 .hasArg()
-                .desc("CSV file name")
+                .desc("CSV file name.")
                 .build();
         threadCountOption = Option
                 .builder("t")
                 .longOpt("thread")
-                .argName("thread count")
+                .argName("thread count.")
                 .hasArg()
                 .desc("Set up thread size, default - 1")
                 .build();
         helpOption = Option
                 .builder("h")
                 .longOpt("help")
-                .desc("Display usage")
+                .desc("Display usage.")
+                .build();
+        saveInputOrder = Option
+                .builder("s")
+                .longOpt("save")
+                .desc("Save input order. Default value is false.")
                 .build();
         options.addOption(fileNameOption);
         options.addOption(threadCountOption);
+        options.addOption(saveInputOrder);
         options.addOption(helpOption);
     }
 }

@@ -1,4 +1,3 @@
-import javafx.util.Pair;
 import model.AccessionData;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
@@ -7,6 +6,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
+import utils.Pair;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.BufferedReader;
@@ -15,14 +15,12 @@ import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.stream.Collectors;
 
 public class DataFetcher {
 
@@ -43,56 +41,58 @@ public class DataFetcher {
             "?db=gds&rettype=xml&id=";
     private final static String ACCESSION_METADATA_URL = "http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=%s" +
             "&targ=self&form=xml&view=quick";
-
-    private int threadCount;
     private final List<String> samplesIds;
-    private final LinkedBlockingQueue<String> accessions;
-    private final LinkedBlockingQueue<AccessionData> accessionsData;
+    private final LinkedBlockingQueue<Pair<Integer, String>> accessions;
+    private final LinkedBlockingQueue<Pair<Integer, AccessionData>> accessionsData;
+    private int threadCount;
+    private boolean saveInputOrder;
 
-    public DataFetcher(int threadCount) {
+    public DataFetcher(int threadCount, boolean saveInputOrder) {
         samplesIds = new ArrayList<>();
         accessions = new LinkedBlockingQueue<>();
         accessionsData = new LinkedBlockingQueue<>();
         this.threadCount = threadCount;
+        this.saveInputOrder = saveInputOrder;
     }
 
-    public List<AccessionData> fetchData() {
-        getSamples();
 
-        // set up execution service for getting GSMxxx-s
+    public List<AccessionData> fetchData() {
+
+        fetchSamples();
+
+        // set up executor service for getting GSMxxx-s
         ExecutorService executorGSMs = Executors.newFixedThreadPool(threadCount);
-        Set<Callable<Void>> callables= createCallablesForFetchingGSMs();
+        Set<Callable<Void>> callables = createCallablesForFetchingGSMs();
         try {
             executorGSMs.invokeAll(callables);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            logger.error("Problem with fetching GSMs", e);
+            throw new RuntimeException(e);
         }
         executorGSMs.shutdownNow();
 
-        // set up execution service for metadata
+        // set up executor service for fetching metadata
         ExecutorService executorMetadata = Executors.newFixedThreadPool(threadCount);
-        callables= createCallablesForFetchingMetadata();
+        callables = createCallablesForFetchingMetadata();
         try {
             executorMetadata.invokeAll(callables);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            logger.error("Problem with fetching metadata", e);
+            throw new RuntimeException(e);
         }
         executorMetadata.shutdownNow();
 
-        return new ArrayList<>(accessionsData);
 
-    }
+        List<Pair<Integer, AccessionData>> pairsWithAccessions = new ArrayList<>(accessionsData);
 
-    private Set<Callable<Void>> createCallablesForFetchingMetadata() {
-        //create callables
-        Set<Callable<Void>> callables = new HashSet<>();
-        for (String accession : accessions) {
-            callables.add(() -> {
-                getMetadata(accession);
-                return null;
-            });
+        if (saveInputOrder) {
+            pairsWithAccessions.sort(Comparator.comparing(Pair::getFirst));
         }
-        return callables;
+        return pairsWithAccessions
+                .stream()
+                .map(Pair::getSecond)
+                .collect(Collectors.toList());
+
     }
 
     private Set<Callable<Void>> createCallablesForFetchingGSMs() {
@@ -110,13 +110,23 @@ public class DataFetcher {
         }
         indexes.add(new Pair<>(lastIndex, samplesIds.size() - 1));
 
-        //create callables
-        Set<Callable<Void>> callables = new HashSet<Callable<Void>>();
+        Set<Callable<Void>> callables = new HashSet<>();
         for (Pair<Integer, Integer> index : indexes) {
-            int startIndex = index.getKey();
-            int endIndex = index.getValue();
+            int startIndex = index.getFirst();
+            int endIndex = index.getSecond();
             callables.add(() -> {
-                getGSMs(startIndex, endIndex);
+                fetchGSMs(startIndex, endIndex);
+                return null;
+            });
+        }
+        return callables;
+    }
+
+    private Set<Callable<Void>> createCallablesForFetchingMetadata() {
+        Set<Callable<Void>> callables = new HashSet<>();
+        for (Pair<Integer, String> accession : accessions) {
+            callables.add(() -> {
+                fetchMetadata(accession.getFirst(), accession.getSecond());
                 return null;
             });
         }
@@ -124,7 +134,7 @@ public class DataFetcher {
     }
 
 
-    private void getGSMs(int firstIndex, int lastIndex) {
+    private void fetchGSMs(int firstIndex, int lastIndex) {
         StringBuilder ids = new StringBuilder();
         StringBuilder response = new StringBuilder();
         try {
@@ -142,19 +152,21 @@ public class DataFetcher {
 
         // extract GSMxxx-s from response
         int index = response.indexOf(SEARCH_PATTERN);
+        int indexForSorting = firstIndex;
         while (index >= 0) {
             int counter = 0;
             while (Character.isDigit(response.charAt(index + SEARCH_PATTERN.length() + counter))
                     || Character.isLetter(response.charAt(index + SEARCH_PATTERN.length() + counter)))
                 ++counter;
-            accessions.add(response.substring(index + SEARCH_PATTERN.length(),
-                    index + SEARCH_PATTERN.length() + counter));
+            accessions.add(new Pair<>(indexForSorting, response.substring(index + SEARCH_PATTERN.length(),
+                    index + SEARCH_PATTERN.length() + counter)));
+            ++indexForSorting;
             index = response.indexOf(SEARCH_PATTERN, index + 1);
         }
     }
 
 
-    private void getMetadata(String accession) {
+    private void fetchMetadata(Integer indexInInputData, String accession) {
         try {
             StringBuffer response = getResponse(String.format(ACCESSION_METADATA_URL, accession));
             Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
@@ -173,6 +185,7 @@ public class DataFetcher {
                         index + assemblySearchPattern.length() + counter);
             }
 
+            // extract metadata from response
             String donorSex = ABSENT_VALUE;
             String donorAge = ABSENT_VALUE;
             NodeList characteristics = doc.getElementsByTagName(CHARACTERISTICS_TAG);
@@ -199,7 +212,8 @@ public class DataFetcher {
                 }
             }
 
-            accessionsData.add(new AccessionData(accession, organism, assemblyValue, donorSex, donorAge, downloadURL));
+            accessionsData.add(new Pair<>(indexInInputData,
+                    new AccessionData(accession, organism, assemblyValue, donorSex, donorAge, downloadURL)));
 
         } catch (Exception e) {
             logger.error("Problem with fetching metadata", e);
@@ -207,7 +221,7 @@ public class DataFetcher {
         }
     }
 
-    private void getSamples() {
+    private void fetchSamples() {
         try {
             StringBuffer response = getResponse(SAMPLES_URL);
             Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()

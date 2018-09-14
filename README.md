@@ -22,17 +22,18 @@ You can use -h key to look how to use app.
 Output:
  >This tool  fetches and stores GEO metadata from DB to specified file    
   usage: geo-data [options] [filename]   
-   -f,--file <file name>   CSV file name  
-   -h,--help               Display usage  
-   -t,--thread <thread count>   Set up thread size, default - 1
+   -f,--file <file name>   CSV file name.  
+   -h,--help               Display usage.  
+   -s,--save                     Save input order. Default value is false.  
+   -t,--thread <thread count>   Set up thread size, default - 1.
   
 
 Default filename is `results.csv`
 
 #### Example usage
 
-The example how to start app and save metadata to res.csv file using 5 threads:  
+The example how to start app and save metadata to res.csv file using 5 threads and with input order:  
 * It's necessary to compile project:  
     `mvn clean install -Dlog4j.configuration=${PATH_TO_PROJECT}/src/main/resources/log4j.properties`  
 * Execute jar file:  
-    `java -jar geo-data.jar -t 5 -f res.csv`
+    `java -jar geo-data.jar -t 5 -f res.csv -s`
