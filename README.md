@@ -22,10 +22,10 @@ You can use -h key to look how to use app.
 Output:
  >This tool  fetches and stores GEO metadata from DB to specified file    
   usage: geo-data [options] [filename]   
-   -f,--file <file name>   CSV file name.  
-   -h,--help               Display usage.  
-   -s,--save                     Save input order. Default value is false.  
-   -t,--thread <thread count>   Set up thread size, default - 1.
+   -f,--file file_name   |CSV file name.  
+   -h,--help               |Display usage.  
+   -s,--save                     |Save input order. Default value is false.  
+   -t,--thread thread_count  |Set up thread size, default - 1.
   
 
 Default filename is `results.csv`
