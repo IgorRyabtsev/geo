@@ -48,14 +48,14 @@ public class DataFetcher {
     }
 
     public List<AccessionData> fetchData() {
-        getSamples();
-        getGSMs();
-        getMetadata();
+        fetchSamples();
+        fetchGSMs();
+        fetchMetadata();
         return accessionsData;
 
     }
 
-    private void getMetadata() {
+    private void fetchMetadata() {
         try {
             for (String accession : accessions) {
                 StringBuffer response = getResponse(String.format(ACCESSION_METADATA_URL, accession));
@@ -109,7 +109,7 @@ public class DataFetcher {
         }
     }
 
-    private void getGSMs() {
+    private void fetchGSMs() {
         StringBuilder ids = new StringBuilder();
         StringBuilder response = new StringBuilder();
         try {
@@ -140,7 +140,7 @@ public class DataFetcher {
         }
     }
 
-    private void getSamples() {
+    private void fetchSamples() {
         try {
             StringBuffer response = getResponse(SAMPLES_URL);
             Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()

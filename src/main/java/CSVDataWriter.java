@@ -20,7 +20,6 @@ public class CSVDataWriter {
         try (FileWriter outputFile = new FileWriter(file);
              CSVWriter writer = new CSVWriter(outputFile)) {
             writer.writeNext(HEADERS);
-            // add data to csv
             for (AccessionData accession : accessionData) {
                 writer.writeNext(convertAccessionDataToFieldsValueArray(accession));
             }
